@@ -55,3 +55,15 @@
 
 (comment (round-to 0 10)
          (round-to 2 10.123))
+
+(defmacro prepare-name
+  "Returns namespaced keyword for given name."
+  [name]
+  `(if (and (keyword? ~name) (namespace ~name))
+     ~name
+     (keyword (str ~*ns*) (clojure.core/name ~name))))
+
+(defn fqname
+  "Like `name` but returns fully-qualified name."
+  [keyword]
+  (str (namespace keyword) "/" (name keyword)))

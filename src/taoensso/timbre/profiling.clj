@@ -1,23 +1,16 @@
 (ns taoensso.timbre.profiling
-  "Simple all-Clojure profiling adapted from clojure.contrib.profile."
+  "Profiling logger for Timbre, adapted from clojure.contrib.profile."
   {:author "Peter Taoussanis"}
   (:require [taoensso.timbre       :as timbre]
             [taoensso.timbre.utils :as utils]))
 
 (def ^:dynamic *plog* "{::pname [time1 time2 ...] ...}" nil)
 
-(defmacro prepare-name
-  "Returns namespaced keyword for given name."
-  [name]
-  `(if (and (keyword? ~name) (namespace ~name))
-     ~name
-     (keyword (str ~*ns*) (clojure.core/name ~name))))
-
 (defmacro p
   "When in the context of a *plog* binding, records execution time of named
   body. Always returns the body's result."
   [name & body]
-  (let [name (prepare-name name)]
+  (let [name (utils/prepare-name name)]
     `(if *plog*
        (let [start-time# (System/nanoTime)
              result#     (do ~@body)
@@ -44,11 +37,6 @@
                               :mad   mad
                               :time  time})))
           {} plog))
-
-(defn fqname
-  "Like `name` but returns fully-qualified name."
-  [keyword]
-  (str (namespace keyword) "/" (name keyword)))
 
 (defn plog-table
   "Returns formatted table string for given plog stats."
@@ -80,7 +68,7 @@
          (doseq [pname (->> (keys stats)
                             (sort-by #(- (get-in stats [% sort-field]))))]
            (let [{:keys [count min max mean mad time]} (stats pname)]
-             (printf pattern (fqname pname) count (ft min) (ft max) (ft mad)
+             (printf pattern (utils/fqname pname) count (ft min) (ft max) (ft mad)
                      (ft mean) (perc time clock-time) (ft time))))
 
          (printf s-pattern "[Clock] Time" "" "" "" "" "" 100 (ft clock-time))
@@ -92,7 +80,7 @@
   timed and time stats sent along with `name` to binary `log-fn`. Returns body's
   result."
   [log-fn name & body]
-  (let [name (prepare-name name)]
+  (let [name (utils/prepare-name name)]
     `(binding [*plog* (atom {})]
        (let [result# (do ~@body)]
          (~log-fn ~name (plog-stats @*plog*))
@@ -113,7 +101,7 @@
       (fn [name# stats#]
         (timbre/log* ~level
                      {:profile-stats stats#}
-                     (str "Profiling " (fqname name#))
+                     (str "Profiling " (utils/fqname name#))
                      (str "\n" (plog-table stats#))))
       ~name
       (p ::clock-time ~@body))
