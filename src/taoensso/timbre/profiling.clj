@@ -1,23 +1,54 @@
 (ns taoensso.timbre.profiling
-  "Profiling logger for Timbre, adapted from clojure.contrib.profile."
+  "Logging profiler for Timbre, adapted from clojure.contrib.profile."
   {:author "Peter Taoussanis"}
   (:require [taoensso.timbre       :as timbre]
             [taoensso.timbre.utils :as utils]))
 
 (def ^:dynamic *plog* "{::pname [time1 time2 ...] ...}" nil)
 
+(declare p plog-stats plog-table)
+
+(defmacro profile
+  "When logging is enabled, executes named body with profiling enabled. Body
+  forms wrapped in (p) will be timed and time stats logged. Always returns
+  body's result.
+
+  Note that logging appenders will receive both a profiling table string AND the
+  raw profiling stats under a special :profiling-stats key. One common use is
+  for db appenders to check for this special key and to log profiling stats to
+  db in a queryable manner."
+  [level name & body]
+  `(if-not (timbre/logging-enabled? ~level)
+     (do ~@body)
+     (let [name# (utils/prepare-name ~name)]
+       (binding [*plog* (atom {})]
+         (let [result# (p ::clock-time ~@body)
+               stats#  (plog-stats @*plog*)]
+           (timbre/log* ~level
+                        {:profile-stats stats#}
+                        (str "Profiling " (utils/fqname name#))
+                        (str "\n" (plog-table stats#))))))))
+
+(defmacro sampling-profile
+  "Like `profile`, but only enables profiling every 1/`proportion` calls.
+  Always returns body's result."
+  [level proportion name & body]
+  `(if-not (> ~proportion (rand))
+     (do ~@body)
+     (profile ~level ~name ~@body)))
+
 (defmacro p
   "When in the context of a *plog* binding, records execution time of named
   body. Always returns the body's result."
   [name & body]
   (let [name (utils/prepare-name name)]
-    `(if *plog*
+    `(if-not *plog*
+       (do ~@body)
        (let [start-time# (System/nanoTime)
              result#     (do ~@body)
              elapsed#    (- (System/nanoTime) start-time#)]
          (swap! *plog* #(assoc % ~name (conj (% ~name []) elapsed#)))
-         result#)
-       (do ~@body))))
+         result#))))
 
 (defn plog-stats
   "{::pname [time1 time2 ...] ...} => {::pname {:min <min-time> ...} ...}"
@@ -74,46 +105,6 @@
          (printf s-pattern "[Clock] Time" "" "" "" "" "" 100 (ft clock-time))
          (printf s-pattern "Accounted Time" "" "" "" "" ""
                  (perc accounted clock-time) (ft accounted))))))
-
-(defmacro profile*
-  "Executes named body with profiling enabled. Body forms wrapped in (p) will be
-  timed and time stats sent along with `name` to binary `log-fn`. Returns body's
-  result."
-  [log-fn name & body]
-  (let [name (utils/prepare-name name)]
-    `(binding [*plog* (atom {})]
-       (let [result# (do ~@body)]
-         (~log-fn ~name (plog-stats @*plog*))
-         result#))))
-
-(defmacro profile
-  "When logging is enabled, executes named body with profiling enabled. Body
-  forms wrapped in (p) will be timed and time stats logged. Always returns
-  body's result.
-
-  Note that logging appenders will receive both a profiling table string AND the
-  raw profiling stats under a special :profiling-stats key. One common use is
-  for db appenders to check for this special key and to log profiling stats to
-  db in a queryable manner."
-  [level name & body]
-  `(if (timbre/logging-enabled? ~level)
-     (profile*
-      (fn [name# stats#]
-        (timbre/log* ~level
-                     {:profile-stats stats#}
-                     (str "Profiling " (utils/fqname name#))
-                     (str "\n" (plog-table stats#))))
-      ~name
-      (p ::clock-time ~@body))
-     (do ~@body)))
-
-(defmacro sampling-profile
-  "Like `profile`, but only enables profiling every 1/`proportion` calls.
-  Always returns body's result."
-  [level proportion name & body]
-  `(if (> ~proportion (rand))
-     (profile ~level ~name ~@body)
-     (do ~@body)))
 
 (comment
   (profile :info :Sleepy-threads
