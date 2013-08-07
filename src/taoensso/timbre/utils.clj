@@ -74,7 +74,7 @@
          ~@body))))
 
 (comment (defmacro* foo [] `(println ~*line*))
-         (defmacro* bar [] `(foo))
+         (defmacro bar [] `(foo))
          (defmacro  qux [] `(bar)) ; How is this working!?
          (macroexpand-1 '(foo))
          (macroexpand-1 '(bar))
