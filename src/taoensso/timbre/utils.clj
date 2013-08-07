@@ -65,12 +65,12 @@
 
 (comment (map #(fq-keyword %) ["foo" :foo :foo/bar]))
 
-(def ^:dynamic *line* nil)
 (defmacro defmacro* "Like `defmacro` but sets a *line* binding."
   [name & sigs]
   (let [[name [params & body]] (macro/name-with-attributes name sigs)]
     `(defmacro ~name ~params
-       (binding [*line* ~(:line (meta &form))]
+       (let [line# ~(:line (meta &form))]
+         (println line#)
          ~@body))))
 
 (comment (defmacro* foo [] `(println ~*line*))
