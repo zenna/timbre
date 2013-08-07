@@ -318,22 +318,23 @@
   appender-fns. "
 
   ;; For tools.logging.impl/Logger support
-  ([base-appender-args level log-vargs ns throwable message juxt-fn]
+  ([base-appender-args level log-vargs ns throwable message juxt-fn & [line]]
      `(when-let [juxt-fn# (or ~juxt-fn (@appenders-juxt-cache ~level))]
         (juxt-fn#
          (conj (or ~base-appender-args {})
            {:instant   (Date.)
             :ns        ~ns
             :file      ~*file*
-            :line      ~(:line (meta &form))
+            :line      ~line ; No tools.logging support (requires capture
+                             ; _outside_ of any conditionals)
             :level     ~level
             :error?    (error-level? ~level)
-            :args      ~log-vargs ; No native tools.logging support
+            :args      ~log-vargs  ; No tools.logging support
             :throwable ~throwable
             :message   ~message}))
         nil))
 
-  ([base-appender-args level log-args message-fn]
+  ([base-appender-args level line log-args message-fn]
      `(when-let [juxt-fn# (@appenders-juxt-cache ~level)]
         (let [[x1# & xn# :as xs#] (vector ~@log-args)
               has-throwable?# (instance? Throwable x1#)
@@ -346,7 +347,8 @@
                 (when-let [mf# ~message-fn]
                   (when-not (empty? log-vargs#)
                     (apply mf# log-vargs#)))
-                juxt-fn#)))))
+                juxt-fn#
+                ~line)))))
 
 (defmacro log
   "When logging is enabled, actually logs given arguments with level-relevant
@@ -354,7 +356,7 @@
   {:arglists '([level & message] [level throwable & message])}
   [level & sigs]
   `(when (logging-enabled? ~level)
-     (log* {} ~level ~sigs print-str)))
+     (log* {} ~level ~(:line (meta &form)) ~sigs print-str)))
 
 (defmacro logf
   "When logging is enabled, actually logs given arguments with level-relevant
