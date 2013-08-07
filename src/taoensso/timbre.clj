@@ -3,7 +3,7 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string        :as str]
             [clj-stacktrace.repl   :as stacktrace]
-            [taoensso.timbre.utils :as utils])
+            [taoensso.timbre.utils :as utils :refer (defmacro* *line*)])
   (:import  [java.util Date Locale]
             [java.text SimpleDateFormat]))
 
@@ -307,6 +307,20 @@
 
 ;;;; Define logging macros
 
+;; (defmacro ^:private with-line [& body]
+;;   `(let [~'*line* ~(:line (meta &form))]
+;;      ~@body))
+
+;; (comment (macroexpand '(with-line (println *line*))))
+
+(def ^:private macro-line nil)
+(defmacro ^:private with-line [& body]
+  `(let [~'macro-line ~(or macro-line (:line (meta &form)))]
+     ~@body))
+
+(comment (macroexpand '(with-line (println *line*))))
+
+
 (defn logging-enabled?
   "Returns true when current logging level is sufficient and current namespace
   is unfiltered."
@@ -318,15 +332,14 @@
   appender-fns. "
 
   ;; For tools.logging.impl/Logger support
-  ([base-appender-args level log-vargs ns throwable message juxt-fn & [line]]
+  ([base-appender-args level log-vargs ns throwable message juxt-fn]
      `(when-let [juxt-fn# (or ~juxt-fn (@appenders-juxt-cache ~level))]
         (juxt-fn#
          (conj (or ~base-appender-args {})
            {:instant   (Date.)
             :ns        ~ns
             :file      ~*file*
-            :line      ~line ; No tools.logging support (requires capture
-                             ; _outside_ of any conditionals)
+            :line      ~macro-line
             :level     ~level
             :error?    (error-level? ~level)
             :args      ~log-vargs  ; No tools.logging support
@@ -347,8 +360,7 @@
                 (when-let [mf# ~message-fn]
                   (when-not (empty? log-vargs#)
                     (apply mf# log-vargs#)))
-                juxt-fn#
-                ~line)))))
+                juxt-fn#)))))
 
 (defmacro log
   "When logging is enabled, actually logs given arguments with level-relevant
