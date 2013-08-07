@@ -64,3 +64,18 @@
      (keyword (str ~*ns*) (clojure.core/name ~name))))
 
 (comment (map #(fq-keyword %) ["foo" :foo :foo/bar]))
+
+(def ^:dynamic *line* nil)
+(defmacro defmacro* "Like `defmacro` but sets a *line* binding."
+  [name & sigs]
+  (let [[name [params & body]] (macro/name-with-attributes name sigs)]
+    `(defmacro ~name ~params
+       (binding [*line* ~(:line (meta &form))]
+         ~@body))))
+
+(comment (defmacro* foo [] `(println ~*line*))
+         (defmacro* bar [] `(foo))
+         (defmacro  qux [] `(bar)) ; How is this working!?
+         (macroexpand-1 '(foo))
+         (macroexpand-1 '(bar))
+         (macroexpand-1 '(qux)))

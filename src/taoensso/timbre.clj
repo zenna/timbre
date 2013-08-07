@@ -350,13 +350,22 @@
                 juxt-fn#
                 ~line)))))
 
+(def ^:dynamic *line* nil)
+
 (defmacro log
   "When logging is enabled, actually logs given arguments with level-relevant
   appender-fns using print-style :message."
   {:arglists '([level & message] [level throwable & message])}
   [level & sigs]
-  `(when (logging-enabled? ~level)
-     (log* {} ~level ~(:line (meta &form)) ~sigs print-str)))
+  (let [line (:line (meta &form))]
+    `(when (logging-enabled? ~level)
+       (log* {} ~level ~line ~sigs print-str))))
+
+(macroexpand-1 '(log :info "hello"))
+(macroexpand-1 '(info "hello"))
+(-> '(info "hello") macroexpand-1 macroexpand-1)
+;;(info "hello")
+;;(infof "hello")
 
 (defmacro logf
   "When logging is enabled, actually logs given arguments with level-relevant
@@ -364,7 +373,7 @@
   {:arglists '([level fmt & fmt-args] [level throwable fmt & fmt-args])}
   [level & sigs]
   `(when (logging-enabled? ~level)
-     (log* {} ~level ~sigs format)))
+     (log* {} ~level ~(:line (meta &form)) ~sigs format)))
 
 (defmacro log-errors [& body] `(try ~@body (catch Throwable t# (error t#))))
 (defmacro log-and-rethrow-errors [& body]
