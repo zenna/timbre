@@ -74,9 +74,9 @@
          ~@body))))
 
 (comment (defmacro* foo [] `(println ~*line*))
-         (defmacro bar [] `(foo))
-         (defmacro qux [] `(bar))
+         (defmacro  bar [& body]  `(when true ~@body))
+         (defmacro  qux [& body ] `(when true (bar ~@body)))
          (macroexpand-1 '(foo))
          (macroexpand-1 '(bar))
          (macroexpand-1 '(qux))
-         (qux))
+         (qux (foo)))

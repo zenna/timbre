@@ -3,7 +3,7 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string        :as str]
             [clj-stacktrace.repl   :as stacktrace]
-            [taoensso.timbre.utils :as utils :refer (defmacro* *line*)])
+            [taoensso.timbre.utils :as utils])
   (:import  [java.util Date Locale]
             [java.text SimpleDateFormat]))
 
@@ -307,52 +307,78 @@
 
 ;;;; Define logging macros
 
-;; (defmacro ^:private with-line [& body]
-;;   `(let [~'*line* ~(:line (meta &form))]
-;;      ~@body))
-
-;; (comment (macroexpand '(with-line (println *line*))))
-
-(def ^:private macro-line nil)
-(defmacro ^:private with-line [& body]
-  `(let [~'macro-line ~(or macro-line (:line (meta &form)))]
-     ~@body))
-
-(comment (macroexpand '(with-line (println *line*))))
-
+(def ^:private ^:dynamic *mline* nil)
 
 (defn logging-enabled?
   "Returns true when current logging level is sufficient and current namespace
   is unfiltered."
   [level] (and (sufficient-level? level) (@ns-filter-cache *ns*)))
 
-(defmacro log*
+;; (defmacro log*
+;;   "Implementation detail - subject to change.
+;;   Prepares given arguments for, and then dispatches to all level-relevant
+;;   appender-fns. "
+
+;;   ;; For tools.logging.impl/Logger support
+;;   ([base-appender-args level log-vargs ns throwable message juxt-fn]
+;;      `(binding [*mline* ~(:line (meta &form))]
+;;         (when-let [juxt-fn# (or ~juxt-fn (@appenders-juxt-cache ~level))]
+;;           (juxt-fn#
+;;            (conj (or ~base-appender-args {})
+;;              {:instant   (Date.)
+;;               :ns        ~ns
+;;               :file      ~*file*
+;;               :line      ~*mline*
+;;               :level     ~level
+;;               :error?    (error-level? ~level)
+;;               :args      ~log-vargs  ; No tools.logging support
+;;               :throwable ~throwable
+;;               :message   ~message}))
+;;         nil)))
+
+;;   ([base-appender-args level log-args message-fn]
+;;      `(when-let [juxt-fn# (@appenders-juxt-cache ~level)]
+;;         (let [[x1# & xn# :as xs#] (vector ~@log-args)
+;;               has-throwable?# (instance? Throwable x1#)
+;;               log-vargs# (vec (if has-throwable?# xn# xs#))]
+;;           (log* ~base-appender-args
+;;                 ~level
+;;                 log-vargs#
+;;                 ~(str *ns*)
+;;                 (when has-throwable?# x1#)
+;;                 (when-let [mf# ~message-fn]
+;;                   (when-not (empty? log-vargs#)
+;;                     (apply mf# log-vargs#)))
+;;                 juxt-fn#)))))
+
+(utils/defmacro* log1
   "Implementation detail - subject to change.
   Prepares given arguments for, and then dispatches to all level-relevant
   appender-fns. "
 
-  ;; For tools.logging.impl/Logger support
-  ([base-appender-args level log-vargs ns throwable message juxt-fn]
-     `(when-let [juxt-fn# (or ~juxt-fn (@appenders-juxt-cache ~level))]
-        (juxt-fn#
-         (conj (or ~base-appender-args {})
-           {:instant   (Date.)
-            :ns        ~ns
-            :file      ~*file*
-            :line      ~macro-line
-            :level     ~level
-            :error?    (error-level? ~level)
-            :args      ~log-vargs  ; No tools.logging support
-            :throwable ~throwable
-            :message   ~message}))
-        nil))
+  [base-appender-args level log-vargs ns throwable message juxt-fn]
+  `(when-let [juxt-fn# (or ~juxt-fn (@appenders-juxt-cache ~level))]
+     (println "log1 line: " ~utils/*line*)
+     (juxt-fn#
+      (conj (or ~base-appender-args {})
+            {:instant   (Date.)
+             :ns        ~ns
+             :file      ~*file*
+             :line      ~utils/*line*
+             :level     ~level
+             :error?    (error-level? ~level)
+             :args      ~log-vargs  ; No tools.logging support
+             :throwable ~throwable
+             :message   ~message}))
+     nil))
 
-  ([base-appender-args level line log-args message-fn]
+(defmacro log*
+  [base-appender-args level log-args message-fn]
      `(when-let [juxt-fn# (@appenders-juxt-cache ~level)]
         (let [[x1# & xn# :as xs#] (vector ~@log-args)
               has-throwable?# (instance? Throwable x1#)
               log-vargs# (vec (if has-throwable?# xn# xs#))]
-          (log* ~base-appender-args
+          (log1 ~base-appender-args
                 ~level
                 log-vargs#
                 ~(str *ns*)
@@ -360,7 +386,7 @@
                 (when-let [mf# ~message-fn]
                   (when-not (empty? log-vargs#)
                     (apply mf# log-vargs#)))
-                juxt-fn#)))))
+                juxt-fn#))))
 
 (defmacro log
   "When logging is enabled, actually logs given arguments with level-relevant
@@ -368,7 +394,7 @@
   {:arglists '([level & message] [level throwable & message])}
   [level & sigs]
   `(when (logging-enabled? ~level)
-     (log* {} ~level ~(:line (meta &form)) ~sigs print-str)))
+     (log* {} ~level ~sigs print-str)))
 
 (defmacro logf
   "When logging is enabled, actually logs given arguments with level-relevant
@@ -376,7 +402,7 @@
   {:arglists '([level fmt & fmt-args] [level throwable fmt & fmt-args])}
   [level & sigs]
   `(when (logging-enabled? ~level)
-     (log* {} ~level ~(:line (meta &form)) ~sigs format)))
+     (log* {} ~level ~sigs format)))
 
 ;;; TODO Try check macrotools, etc.
 
