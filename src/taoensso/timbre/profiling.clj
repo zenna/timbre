@@ -5,17 +5,25 @@
             [taoensso.timbre.utils :as utils]))
 
 (def ^:dynamic *pdata* "{::pname [time1 time2 ...]}" nil)
+(def ^:dynamic *odata* "{::pname [time1 time2 ...]}" nil)
 
 (declare p)
+(declare o)
 
 (defmacro with-pdata
   [level & body]
   `(if-not (timbre/logging-enabled? ~level)
      {:result (do ~@body)}
-     (binding [*pdata* (atom {})]
-       {:result (p ::clock-time ~@body) :stats (pdata-stats @*pdata*)})))
+     (binding [*pdata* (atom {})
+               *odata* (atom {})]
+       {
+        :result (do ~@body)
+        :zzz (pdata-stats @*odata*)
+        :stats (pdata-stats @*pdata*)
+       }
+        )))
 
-(declare pdata-stats format-pdata)
+(declare pdata-stats odata-stats format-pdata)
 
 (defmacro profile
   "When logging is enabled, executes named body with profiling enabled. Body
@@ -26,12 +34,17 @@
   the raw profiling stats under a special :profiling-stats key (useful for
   queryable db logging)."
   [level name & body]
-  (let [name (utils/fq-keyword name)]
-    `(let [{result# :result stats# :stats} (with-pdata ~level ~@body)]
+  (let [orig-name name
+        name (utils/fq-keyword name)]
+    `(let [{result# :result stats# :stats ostats# :zzz}
+           (with-pdata ~level ~@body)]
+       ; (println "STATS" ostats#)
        (when stats#
-         (timbre/log* print-str ~level {:profile-stats stats#}
-                      (str "Profiling " ~name)
-                      (str "\n" (format-pdata stats#))))
+         (timbre/log* print-str ~level {:profile-stats stats#
+                                        :object-stats ostats#
+                                        :orig-name ~orig-name}
+                      name
+                      (str "\n" )))
        result#)))
 
 (defmacro sampling-profile
@@ -46,7 +59,7 @@
   "Profile spy. When in the context of a *pdata* binding, records execution time
   of named body. Always returns the body's result."
   [name & body]
-  (let [name (utils/fq-keyword name)]
+  (let [name name]  ;FIXME, old: (utils/fq-keyword name)
     `(if-not *pdata*
        (do ~@body)
        (let [name#       ~name
@@ -58,6 +71,22 @@
               (swap! *pdata* #(assoc % name# (conj (% name# []) elapsed#))))))))))
 
 (defmacro p [name & body] `(pspy ~name ~@body)) ; Alias
+
+(defmacro ospy
+  "Profile spy. When in the context of a *pdata* binding, records execution time
+  of named body. Always returns the body's result."
+  [name f & body]
+  (let [name name] ;FIXME, old: (utils/fq-keyword name)
+    `(if-not *odata*
+       (do ~@body)
+       (let [name#       ~name
+             op# (do ~@body)]
+         (try
+           op#
+           (finally
+             (swap! *odata* #(assoc % name# (conj (% name# []) (~f op#))))))))))
+
+(defmacro o [name f & body] `(ospy ~name ~f ~@body)) ; Alias
 
 (defn pdata-stats
   "{::pname [time1 time2 ...] ...} => {::pname {:min <min-time> ...} ...}
@@ -80,6 +109,11 @@
                        :mad   mad
                        :time  time})))
    {} (or pdata {})))
+
+(defn odata-stats
+  ""
+  [odata]
+  odata)
 
 (defn format-pdata
   [stats & [sort-field]]
